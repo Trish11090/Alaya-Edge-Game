@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Truth Bombs & Trigger Tiles</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #F3EADF; /* A warm, paper-like background */
+            color: #3D352E;
+        }
+        .game-board-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            aspect-ratio: 1 / 1;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            border-radius: 1.5rem;
+        }
+        .modal-backdrop {
+            background-color: rgba(0,0,0,0.6);
+        }
+        .btn {
+            transition: all 0.2s ease-in-out;
+        }
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .player-card.active {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px rgba(250, 204, 21, 0.7);
+            border-color: #FACC15; /* yellow-400 */
+        }
+        .rules-btn {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            z-index: 10;
+        }
+        @keyframes flash {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.4); }
+        }
+        .flash {
+            animation: flash 0.4s ease-in-out;
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-4 lg:p-8">
+
+    <div id="game-container" class="w-full max-w-7xl mx-auto hidden">
+        <header class="text-center mb-4">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-800">Truth Bombs & Trigger Tiles</h1>
+            <p class="text-lg text-gray-600">Your journey to the Liberation Point awaits.</p>
+        </header>
+
+        <main class="flex flex-col lg:flex-row gap-8">
+            <!-- Left Panel: Game Board -->
+            <div class="flex-grow flex items-center justify-center">
+                <div class="game-board-container">
+                    <canvas id="game-board"></canvas>
+                    <button id="rules-btn" class="rules-btn btn bg-white/70 backdrop-blur-sm text-gray-800 w-12 h-12 rounded-full text-2xl font-bold shadow-md">?</button>
+                </div>
+            </div>
+
+            <!-- Right Panel: Player Info & Controls -->
+            <div class="w-full lg:w-96 flex flex-col gap-6">
+                <div id="players-panel" class="bg-white/60 backdrop-blur-sm p-4 rounded-2xl shadow-lg space-y-4">
+                    <!-- Player cards will be injected here -->
+                </div>
+                
+                <div id="controls-panel" class="bg-white/60 backdrop-blur-sm p-6 rounded-2xl shadow-lg text-center">
+                    <h2 id="turn-indicator" class="text-xl font-bold mb-4">Player's Turn</h2>
+                    <p id="roll-result" class="text-4xl font-bold h-12 mb-4"></p>
+                    <button id="roll-die-btn" class="btn bg-amber-500 hover:bg-amber-600 text-white font-bold py-3 px-8 rounded-full shadow-md w-full text-lg">Roll Die 🎲</button>
+                    <button id="liberation-btn" class="btn bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 px-8 rounded-full shadow-md w-full text-lg hidden">Seek Liberation 🏆</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <div id="setup-modal" class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop">
+        <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md text-center">
+            <h2 class="text-2xl font-bold mb-6">Welcome to the Journey!</h2>
+            <p class="mb-6">How many players are joining? (2-4)</p>
+            <div class="flex justify-center gap-4 mb-8">
+                <button onclick="showNameEntry(2)" class="btn bg-sky-500 text-white w-16 h-16 rounded-full text-2xl font-bold">2</button>
+                <button onclick="showNameEntry(3)" class="btn bg-teal-500 text-white w-16 h-16 rounded-full text-2xl font-bold">3</button>
+                <button onclick="showNameEntry(4)" class="btn bg-purple-500 text-white w-16 h-16 rounded-full text-2xl font-bold">4</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="name-entry-modal" class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop hidden">
+        <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-md">
+            <h2 class="text-2xl font-bold mb-6 text-center">Enter Player Names</h2>
+            <div id="name-inputs" class="space-y-4 mb-8"></div>
+            <button onclick="createPlayersAndStart()" class="btn bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-8 rounded-full shadow-md w-full text-lg">Start Game</button>
+        </div>
+    </div>
+
+    <div id="prompt-modal" class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop hidden">
+        <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-lg text-center transform transition-all scale-95 opacity-0">
+            <h2 id="prompt-title" class="text-2xl font-bold mb-4">Modal Title</h2>
+            <div id="prompt-icon" class="text-5xl mb-4"></div>
+            <p id="prompt-text" class="text-lg mb-8 min-h-[6rem] flex items-center justify-center"></p>
+            <div id="prompt-buttons" class="space-y-2 md:space-y-0 md:space-x-4"></div>
+        </div>
+    </div>
+    
+    <div id="rules-modal" class="fixed inset-0 z-50 flex items-center justify-center modal-backdrop hidden">
+        <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <h2 class="text-3xl font-bold mb-6 text-center">How to Play</h2>
+            <div class="text-left space-y-4">
+                <div>
+                    <h3 class="font-bold text-xl">🏆 Objective</h3>
+                    <p>Be the first player to collect 2 ⭐ Truth Bomb tokens and get rid of all your 🏋️‍♂️ Emotional Weight tokens to reach the Liberation Point at the center of the board.</p>
+                </div>
+                <div>
+                    <h3 class="font-bold text-xl">🎲 On Your Turn</h3>
+                    <p>Roll the die and move your pawn along the path. If your roll takes you past the final tile, you'll "bounce" back. Perform the action of the tile you land on.</p>
+                </div>
+                <div>
+                    <h3 class="font-bold text-xl">✨ Milestone Moments</h3>
+                    <p>Some tiles are marked with a ✨. The first player to land on one of these triggers a special prompt for a "turning point" story before the tile's normal action.</p>
+                </div>
+                <div>
+                    <h3 class="font-bold text-xl">🗺️ Tile Meanings</h3>
+                    <ul class="list-disc list-inside space-y-2">
+                        <li><span class="text-2xl">💣</span> **Truth Bomb:** Draw a card and answer honestly to earn 1 ⭐ token.</li>
+                        <li><span class="text-2xl">🔥</span> **Trigger Tile:** Draw a card and role-play the scenario. This is a moment for personal reflection through action.</li>
+                        <li><span class="text-2xl">🔄</span> **Loop of Doom:** You are "slowed." Your next move is halved (rounded down). A 🔄 icon will appear on your player card for one round.</li>
+                        <li><span class="text-2xl">🌟</span> **Breakthrough:** Immediately remove 1 🏋️‍♂️ token. If you have none, you can take a Real-Life Action card or give one to another player.</li>
+                        <li><span class="text-2xl">🎭</span> **Role Reversal:** Draw a card and follow the instructions for a fun social interaction.</li>
+                        <li><span class="text-2xl">🤝</span> **Lend a Hand:** Choose another player to help. You can either take one of their 🏋️‍♂️ weights or gift them one of your ⭐ bombs (if you have extra). If no help is possible, it becomes a moment of reflection.</li>
+                        <li><span class="text-2xl">🧘</span> **Regular Tile:** A moment of quiet reflection.</li>
+                    </ul>
+                </div>
+            </div>
+            <button onclick="closeRulesModal()" class="btn mt-8 bg-amber-500 text-white px-8 py-2 rounded-full w-full">Got it!</button>
+        </div>
+    </div>
+
+
+    <script>
+        // --- DOM ELEMENTS ---
+        const gameContainer = document.getElementById('game-container');
+        const canvas = document.getElementById('game-board');
+        const ctx = canvas.getContext('2d');
+        const playersPanel = document.getElementById('players-panel');
+        const turnIndicator = document.getElementById('turn-indicator');
+        const rollResult = document.getElementById('roll-result');
+        const rollDieBtn = document.getElementById('roll-die-btn');
+        const liberationBtn = document.getElementById('liberation-btn');
+        const setupModal = document.getElementById('setup-modal');
+        const nameEntryModal = document.getElementById('name-entry-modal');
+        const nameInputsContainer = document.getElementById('name-inputs');
+        const promptModal = document.getElementById('prompt-modal');
+        const promptTitle = document.getElementById('prompt-title');
+        const promptIcon = document.getElementById('prompt-icon');
+        const promptText = document.getElementById('prompt-text');
+        const promptButtons = document.getElementById('prompt-buttons');
+        const rulesBtn = document.getElementById('rules-btn');
+        const rulesModal = document.getElementById('rules-modal');
+
+        // --- GAME STATE ---
+        let gameState = {
+            players: [],
+            playerCount: 0,
+            currentPlayerIndex: 0,
+            boardTiles: [],
+            shuffledDecks: {},
+            milestoneIndices: [],
+            milestonesClaimed: {},
+            gameRunning: false,
+            audioReady: false,
+        };
+        
+        // --- GAME DATA ---
+        const PLAYER_COLORS = ['#EF4444', '#FBBF24', '#22C55E', '#A855F7']; // Red, Amber, Green, Purple
+        const TILE_TYPES = {
+            START: { name: 'Start', icon: '🏁' },
+            REGULAR: { name: 'Regular', icon: '🧘' },
+            TRUTH_BOMB: { name: 'Truth Bomb', icon: '💣' },
+            TRIGGER: { name: 'Trigger Tile', icon: '🔥' },
+            LOOP: { name: 'Loop of Doom', icon: '🔄' },
+            BREAKTHROUGH: { name: 'Breakthrough', icon: '🌟' },
+            ROLE_REVERSAL: { name: 'Role Reversal', icon: '🎭' },
+            LEND_A_HAND: { name: 'Lend a Hand', icon: '🤝' },
+            LIBERATION: { name: 'Liberation Point', icon: '🏆' }
+        };
+
+        const CARD_DECKS = {
+            [TILE_TYPES.TRUTH_BOMB.name]: ["Reveal one truth you've never said out loud.", "Finish this sentence: 'I secretly wish people saw me as...'", "What is a dream you've been afraid to admit you have?", "Say something kind to yourself out loud, in the third person.", "What's one belief about yourself you're ready to release?", "Describe a fear that shaped a big decision you made.", "When was the last time you surprised yourself?", "What's a small victory you had this week?", "Share a compliment you received that you've never forgotten.", "Describe a time you felt truly, authentically alive."],
+            [TILE_TYPES.TRIGGER.name]: ["Your inner critic is speaking. What's it saying right now? Act it out.", "A teammate just took credit for your idea. Reenact your emotional monologue.", "You receive a vague, critical text from a friend. Role-play your thought process.", "You've been called out for a mistake at work. Role-play your honest, internal reaction.", "You missed an important deadline. What's the story you tell yourself about it?", "You feel misunderstood in a conversation. How do you clarify your point without getting defensive?", "You're feeling overwhelmed with tasks. Role-play how you would ask for help.", "Someone gives you unsolicited advice. Act out a polite but firm response.", "You're comparing yourself to someone on social media. What do you tell yourself to break the cycle?", "Role-play the feeling of 'imposter syndrome' at a new job."],
+            [TILE_TYPES.LOOP.name]: ["Reveal one important task you've postponed for over a month.", "Share a limiting belief you're ready to challenge.", "What's a 'comfortable' but unfulfilling situation you keep returning to?", "Write down one excuse you always use to avoid growth. Read it dramatically.", "What's one 'should' that you can let go of today?", "Describe the first tiny step you could take on a project you've been avoiding.", "What's a fear that's holding you back, and what's one reason it might not be true?", "Name a habit you'd like to break. What's the first step?", "What advice would you give a friend in your current 'stuck' situation?", "Describe the feeling of procrastination. Is it fear, boredom, or something else?"],
+            [TILE_TYPES.ROLE_REVERSAL.name]: ["Trade your 'Emotional Weight' tokens with the player to your right for one round.", "Pretend you are your own inner coach. Give a piece of advice to the player on your left.", "You're the 'Confidence Monster' for one round. Speak and act like you own the place.", "Imitate how another player might react to a Trigger Tile. Ask them for permission first!", "Choose another player. For one round, you are their biggest cheerleader. Encourage them in their next turn.", "Give a piece of advice to your younger self.", "Imagine you are a mentor to the player on your left. What's one piece of wisdom you'd share?", "Act as the 'voice of doubt' for the next player's turn (with their permission). Then, act as the 'voice of encouragement'.", "Switch chairs with the player across from you for one full round.", "For the next round, speak only in questions to the other players."],
+            [TILE_TYPES.BREAKTHROUGH.name]: ["Commit to one micro-action for your well-being this week and say it out loud.", "Draw your inner critic on a piece of paper, and then tear it up.", "Write a compliment to yourself and carry it in your pocket for the rest of the day.", "Send a thank-you message to someone who helped you recently after the game.", "Schedule 15 minutes of 'do nothing' time for yourself this week.", "Write down three things you're grateful for right now.", "The next time you look in a mirror, say one nice thing to yourself.", "Listen to a song that makes you feel powerful.", "Unfollow a social media account that doesn't make you feel good.", "Take a different route on your next walk or drive."]
+        };
+        
+        const LIBERATION_MESSAGES = [
+            "I have ascended! The emotional weights are no match for me!",
+            "Behold! I have reached the pinnacle of self-awareness! (And also, I won.)",
+            "I am liberated! Free from all my burdens... until the next game.",
+            "The journey is complete! I am officially the master of my own universe.",
+            "Winner, winner, emotional-growth dinner! I am liberated!",
+            "I've reached the center of the spiral and all I got was this awesome feeling of liberation!"
+        ];
+
+        // --- AUDIO ---
+        let sounds = {};
+        function setupSounds() {
+            sounds.roll = new Tone.MembraneSynth({ pitchDecay: 0.01, octaves: 6, envelope: { attack: 0.001, decay: 0.2, sustain: 0 } }).toDestination();
+            sounds.jump = new Tone.MembraneSynth({ pitchDecay: 0.05, octaves: 4, envelope: { attack: 0.001, decay: 0.15, sustain: 0 } }).toDestination();
+            gameState.audioReady = true;
+        }
+        
+        async function startAudio() {
+            if (Tone.context.state !== 'running') {
+                await Tone.start();
+                console.log("Audio context started.");
+            }
+            if (!gameState.audioReady) {
+                setupSounds();
+            }
+        }
+        
+        function playSound(sound) {
+            if (gameState.audioReady && sounds[sound]) {
+                sounds[sound].triggerAttackRelease("C2", "8n", Tone.now());
+            }
+        }
+
+        // --- CANVAS & DRAWING ---
+        let canvasSize;
+        let center;
+        
+        function resizeCanvas() {
+            const container = document.querySelector('.game-board-container');
+            canvasSize = container.clientWidth;
+            canvas.width = canvasSize;
+            canvas.height = canvasSize;
+            center = { x: canvasSize / 2, y: canvasSize / 2 };
+            if (gameState.gameRunning) {
+                generateBoardLayout();
+                drawFullScene();
+            }
+        }
+
+        function generateBoardLayout() {
+            const tileDistribution = [
+                TILE_TYPES.START, TILE_TYPES.TRUTH_BOMB, TILE_TYPES.TRIGGER, TILE_TYPES.LOOP,
+                TILE_TYPES.BREAKTHROUGH, TILE_TYPES.LEND_A_HAND, TILE_TYPES.TRUTH_BOMB, TILE_TYPES.TRUTH_BOMB,
+                TILE_TYPES.TRIGGER, TILE_TYPES.LOOP, TILE_TYPES.TRUTH_BOMB, TILE_TYPES.ROLE_REVERSAL,
+                TILE_TYPES.BREAKTHROUGH, TILE_TYPES.TRIGGER, TILE_TYPES.TRUTH_BOMB, TILE_TYPES.REGULAR,
+                TILE_TYPES.LOOP, TILE_TYPES.BREAKTHROUGH, TILE_TYPES.TRUTH_BOMB, TILE_TYPES.ROLE_REVERSAL,
+            ];
+            const totalTiles = tileDistribution.length;
+            const spiralTurns = 2.0; 
+            const maxRadius = canvasSize / 2 - 40; 
+            const minRadius = 70;
+            
+            gameState.boardTiles = tileDistribution.map((type, i) => {
+                const progress = i / (totalTiles - 1);
+                const radius = maxRadius - progress * (maxRadius - minRadius);
+                const angle = -Math.PI / 2 + progress * (2 * Math.PI * spiralTurns);
+                
+                const x = center.x + radius * Math.cos(angle);
+                const y = center.y + radius * Math.sin(angle);
+                return { type, x, y };
+            });
+            
+            gameState.boardTiles.push({ type: TILE_TYPES.LIBERATION, x: center.x, y: center.y });
+
+            // Identify and store milestone indices
+            gameState.milestoneIndices = [
+                tileDistribution.findIndex(t => t === TILE_TYPES.BREAKTHROUGH),
+                tileDistribution.findIndex(t => t === TILE_TYPES.ROLE_REVERSAL),
+                tileDistribution.map(t => t.name).lastIndexOf(TILE_TYPES.TRUTH_BOMB.name)
+            ].filter(i => i !== -1); // Filter out any not found
+        }
+        
+        function drawBoard() {
+            ctx.clearRect(0, 0, canvasSize, canvasSize);
+            
+            ctx.beginPath();
+            ctx.setLineDash([15, 10]);
+            ctx.moveTo(gameState.boardTiles[0].x, gameState.boardTiles[0].y);
+            for (let i = 1; i < gameState.boardTiles.length - 1; i++) {
+                ctx.lineTo(gameState.boardTiles[i].x, gameState.boardTiles[i].y);
+            }
+            ctx.strokeStyle = 'rgba(61, 53, 46, 0.4)';
+            ctx.lineWidth = 5;
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            gameState.boardTiles.forEach((tile, index) => {
+                const isLiberation = index === gameState.boardTiles.length - 1;
+                const radius = isLiberation ? 50 : 35;
+                
+                ctx.shadowColor = 'rgba(0, 0, 0, 0.25)';
+                ctx.shadowBlur = 10;
+                ctx.shadowOffsetX = 5;
+                ctx.shadowOffsetY = 5;
+
+                if (isLiberation) {
+                    ctx.shadowColor = 'rgba(250, 204, 21, 0.7)';
+                    ctx.shadowBlur = 30;
+                }
+
+                ctx.beginPath();
+                ctx.arc(tile.x, tile.y, radius, 0, 2 * Math.PI);
+                const gradient = ctx.createRadialGradient(tile.x - radius*0.3, tile.y - radius*0.3, 0, tile.x, tile.y, radius*1.5);
+                gradient.addColorStop(0, '#FFFFFF');
+                gradient.addColorStop(1, '#F0EBE4');
+                ctx.fillStyle = gradient;
+                ctx.fill();
+
+                ctx.shadowColor = 'transparent';
+                ctx.shadowBlur = 0;
+                ctx.shadowOffsetX = 0;
+                ctx.shadowOffsetY = 0;
+                
+                ctx.strokeStyle = '#C8BBAE';
+                ctx.lineWidth = 5;
+                ctx.stroke();
+                
+                const iconSize = radius * 1.1;
+                ctx.font = `${iconSize}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#3D352E';
+                ctx.fillText(tile.type.icon, tile.x, tile.y + (radius * 0.05));
+
+                // Draw milestone indicator if applicable
+                if (gameState.milestoneIndices.includes(index) && !gameState.milestonesClaimed[index]) {
+                    ctx.font = `${radius * 0.8}px sans-serif`;
+                    ctx.fillStyle = 'rgba(250, 204, 21, 0.9)';
+                    ctx.fillText('✨', tile.x + radius * 0.7, tile.y - radius * 0.7);
+                }
+            });
+        }
+
+        function drawPawns() {
+            const pawnRadius = 16;
+            const positions = {};
+            gameState.players.forEach(p => {
+                const posKey = p.position;
+                if (!positions[posKey]) positions[posKey] = [];
+                positions[posKey].push(p);
+            });
+            for (const posIndex in positions) {
+                const playersOnTile = positions[posIndex];
+                const tile = gameState.boardTiles[posIndex];
+                const numPlayers = playersOnTile.length;
+                playersOnTile.forEach((player, i) => {
+                    let pawnX = tile.x;
+                    let pawnY = tile.y;
+                    if (numPlayers > 1) {
+                        const angle = (i / numPlayers) * 2 * Math.PI;
+                        pawnX += (pawnRadius * 1.8) * Math.cos(angle);
+                        pawnY += (pawnRadius * 1.8) * Math.sin(angle);
+                    }
+                    ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+                    ctx.shadowBlur = 6;
+                    ctx.shadowOffsetX = 3;
+                    ctx.shadowOffsetY = 3;
+                    ctx.beginPath();
+                    ctx.arc(pawnX, pawnY, pawnRadius, 0, 2 * Math.PI);
+                    ctx.fillStyle = player.color;
+                    ctx.fill();
+                    ctx.shadowColor = 'transparent';
+                    ctx.shadowBlur = 0;
+                    ctx.shadowOffsetX = 0;
+                    ctx.shadowOffsetY = 0;
+                    ctx.strokeStyle = 'white';
+                    ctx.lineWidth = 4;
+                    ctx.stroke();
+                });
+            }
+        }
+        
+        function drawFullScene() {
+            drawBoard();
+            drawPawns();
+        }
+        
+        function animateTilePulse(tileIndex, callback) {
+            let startTime = null;
+            const duration = 500; // ms
+
+            function pulse(timestamp) {
+                if (!startTime) startTime = timestamp;
+                const progress = (timestamp - startTime) / duration;
+
+                drawFullScene(); // Redraw base scene
+
+                if (progress < 1) {
+                    const tile = gameState.boardTiles[tileIndex];
+                    const radius = (tileIndex === gameState.boardTiles.length - 1) ? 50 : 35;
+                    const pulseAmount = Math.sin(progress * Math.PI) * 5;
+                    
+                    ctx.shadowColor = 'rgba(255, 255, 0, 0.7)';
+                    ctx.shadowBlur = 20;
+
+                    ctx.beginPath();
+                    ctx.arc(tile.x, tile.y, radius + pulseAmount, 0, 2 * Math.PI);
+                    ctx.strokeStyle = 'rgba(250, 204, 21, 0.8)';
+                    ctx.lineWidth = 3;
+                    ctx.stroke();
+                    
+                    ctx.shadowColor = 'transparent';
+                    ctx.shadowBlur = 0;
+
+                    requestAnimationFrame(pulse);
+                } else {
+                    drawFullScene(); // Final redraw
+                    if (callback) callback();
+                }
+            }
+            requestAnimationFrame(pulse);
+        }
+
+        // --- UI & GAME FLOW ---
+        function updateUI() {
+            const playersHTML = gameState.players.map((p, index) => `
+                <div id="player-card-${index}" class="player-card border-2 border-transparent bg-white/80 p-4 rounded-xl shadow-sm transition-all duration-300">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-3">
+                            <div class="w-4 h-8 rounded" style="background-color: ${p.color};"></div>
+                            <span class="font-bold text-lg">${p.name} ${p.isSlowed ? '🔄' : ''}</span>
+                        </div>
+                        <div class="flex gap-4 text-lg">
+                            <span id="player-${index}-bombs">⭐ ${p.truthBombs}</span>
+                            <span id="player-${index}-weights">🏋️‍♂️ ${p.emotionalWeights}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+            playersPanel.innerHTML = playersHTML;
+            document.querySelectorAll('.player-card').forEach(card => card.classList.remove('active'));
+            document.getElementById(`player-card-${gameState.currentPlayerIndex}`).classList.add('active');
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            turnIndicator.textContent = `${currentPlayer.name}'s Turn`;
+            if (currentPlayer.truthBombs >= 2 && currentPlayer.emotionalWeights === 0) {
+                rollDieBtn.classList.add('hidden');
+                liberationBtn.classList.remove('hidden');
+            } else {
+                rollDieBtn.classList.remove('hidden');
+                liberationBtn.classList.add('hidden');
+            }
+        }
+        
+        function flashToken(playerIndex, tokenType) {
+            const element = document.getElementById(`player-${playerIndex}-${tokenType}`);
+            if (element) {
+                element.classList.add('flash');
+                setTimeout(() => element.classList.remove('flash'), 400);
+            }
+        }
+
+        async function showNameEntry(num) {
+            await startAudio();
+            gameState.playerCount = num;
+            nameInputsContainer.innerHTML = '';
+            for (let i = 0; i < num; i++) {
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.placeholder = `Player ${i + 1} Name`;
+                input.id = `player-name-${i}`;
+                input.className = 'w-full px-4 py-2 border border-gray-300 rounded-lg';
+                nameInputsContainer.appendChild(input);
+            }
+            setupModal.classList.add('hidden');
+            nameEntryModal.classList.remove('hidden');
+        }
+
+        function shuffleDeck(array) {
+            let currentIndex = array.length, randomIndex;
+            while (currentIndex != 0) {
+                randomIndex = Math.floor(Math.random() * currentIndex);
+                currentIndex--;
+                [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+            }
+            return array;
+        }
+
+        function createPlayersAndStart() {
+            for (const deckName in CARD_DECKS) {
+                gameState.shuffledDecks[deckName] = shuffleDeck([...CARD_DECKS[deckName]]);
+            }
+            for (let i = 0; i < gameState.playerCount; i++) {
+                const nameInput = document.getElementById(`player-name-${i}`);
+                const playerName = nameInput.value || `Player ${i + 1}`;
+                gameState.players.push({
+                    name: playerName,
+                    color: PLAYER_COLORS[i],
+                    position: 0,
+                    truthBombs: 0,
+                    emotionalWeights: 1,
+                    isSlowed: false
+                });
+            }
+            nameEntryModal.classList.add('hidden');
+            gameContainer.classList.remove('hidden');
+            gameState.gameRunning = true;
+            setTimeout(() => {
+                resizeCanvas();
+                updateUI();
+            }, 50);
+        }
+        
+        function rollDie() {
+            playSound('roll');
+            rollDieBtn.disabled = true;
+            const roll = Math.floor(Math.random() * 6) + 1;
+            rollResult.textContent = roll;
+            setTimeout(() => {
+                movePlayer(roll);
+            }, 1000);
+        }
+
+        function movePlayer(steps) {
+            const player = gameState.players[gameState.currentPlayerIndex];
+            let moveAmount = steps;
+            if (player.isSlowed) {
+                moveAmount = Math.floor(steps / 2);
+                player.isSlowed = false;
+            }
+            
+            const lastTileIndex = gameState.boardTiles.length - 2;
+            const potentialPosition = player.position + moveAmount;
+            let targetPosition;
+
+            if (potentialPosition > lastTileIndex) {
+                const overshoot = potentialPosition - lastTileIndex;
+                targetPosition = lastTileIndex - overshoot;
+            } else {
+                targetPosition = potentialPosition;
+            }
+            
+            const jump = () => {
+                if (player.position !== targetPosition) {
+                    const direction = targetPosition > player.position ? 1 : -1;
+                    player.position += direction;
+                    playSound('jump');
+                    drawFullScene();
+                    setTimeout(jump, 550);
+                } else {
+                    animateTilePulse(player.position, handleTileAction);
+                }
+            };
+            jump();
+        }
+
+        function handleTileAction() {
+            const player = gameState.players[gameState.currentPlayerIndex];
+            const tileIndex = player.position;
+            const tile = gameState.boardTiles[tileIndex];
+
+            const executeNormalAction = () => {
+                switch (tile.type) {
+                    case TILE_TYPES.TRUTH_BOMB:
+                    case TILE_TYPES.TRIGGER:
+                    case TILE_TYPES.LOOP:
+                    case TILE_TYPES.ROLE_REVERSAL:
+                        showCardPrompt(tile.type);
+                        break;
+                    case TILE_TYPES.BREAKTHROUGH:
+                        handleBreakthrough();
+                        break;
+                    case TILE_TYPES.LEND_A_HAND:
+                        handleLendAHand();
+                        break;
+                    case TILE_TYPES.REGULAR:
+                    case TILE_TYPES.START:
+                        showInfoPrompt(tile.type.icon, tile.type.name, "A moment of reflection. The journey continues.", nextTurn);
+                        break;
+                }
+            };
+
+            if (gameState.milestoneIndices.includes(tileIndex) && !gameState.milestonesClaimed[tileIndex]) {
+                gameState.milestonesClaimed[tileIndex] = true;
+                showMilestonePrompt(executeNormalAction);
+            } else {
+                executeNormalAction();
+            }
+        }
+        
+        function showMilestonePrompt(callback) {
+            showInfoPrompt('✨', 'Milestone Moment!', "You've reached a key point in your journey. Share a one-sentence story about a 'turning point' in your life.", callback);
+        }
+        
+        function drawCardFromDeck(deckName) {
+            if (!gameState.shuffledDecks[deckName] || gameState.shuffledDecks[deckName].length === 0) {
+                console.log(`Reshuffling ${deckName} deck...`);
+                gameState.shuffledDecks[deckName] = shuffleDeck([...CARD_DECKS[deckName]]);
+            }
+            return gameState.shuffledDecks[deckName].pop();
+        }
+
+        function showCardPrompt(tileType) {
+            const prompt = drawCardFromDeck(tileType.name);
+            promptModal.classList.remove('hidden');
+            setTimeout(() => promptModal.querySelector('div').classList.add('scale-100', 'opacity-100'), 10);
+            promptTitle.textContent = tileType.name;
+            promptIcon.textContent = tileType.icon;
+            
+            const buttonsHTML = `<button onclick="handleCardResult('${tileType.name}')" class="btn bg-amber-500 text-white px-8 py-2 rounded-full">Done</button>`;
+            
+            promptText.innerHTML = prompt;
+            promptButtons.innerHTML = buttonsHTML;
+        }
+
+        function handleCardResult(tileName) {
+            const player = gameState.players[gameState.currentPlayerIndex];
+            if (tileName === TILE_TYPES.TRUTH_BOMB.name) {
+                player.truthBombs++;
+                flashToken(gameState.currentPlayerIndex, 'bombs');
+            }
+            else if (tileName === TILE_TYPES.LOOP.name) {
+                player.isSlowed = true;
+            }
+            closePrompt(nextTurn);
+        }
+
+        function handleBreakthrough() {
+            const player = gameState.players[gameState.currentPlayerIndex];
+            if (player.emotionalWeights > 0) {
+                player.emotionalWeights--;
+                flashToken(gameState.currentPlayerIndex, 'weights');
+                const actionCardText = drawCardFromDeck(TILE_TYPES.BREAKTHROUGH.name);
+                showInfoPrompt(TILE_TYPES.BREAKTHROUGH.icon, "Breakthrough!", `You've shed an emotional weight! ✨\n\nYour real-life action: ${actionCardText}`, nextTurn);
+            } else {
+                promptModal.classList.remove('hidden');
+                setTimeout(() => promptModal.querySelector('div').classList.add('scale-100', 'opacity-100'), 10);
+                promptTitle.textContent = "Breakthrough Bonus!";
+                promptIcon.textContent = "🌟";
+                promptText.innerHTML = "You have no emotional weights to shed! You can either take a Real-Life Action card for yourself or give one to another player.";
+                promptButtons.innerHTML = `
+                    <button onclick="handleBreakthroughChoice(true)" class="btn bg-blue-500 text-white px-6 py-2 rounded-full">Take Card</button>
+                    <button onclick="handleBreakthroughChoice(false)" class="btn bg-purple-500 text-white px-6 py-2 rounded-full">Give Card</button>
+                `;
+            }
+        }
+        
+        function handleBreakthroughChoice(takeForSelf) {
+            const actionCardText = drawCardFromDeck(TILE_TYPES.BREAKTHROUGH.name);
+            let message;
+            if (takeForSelf) {
+                message = `You chose to take a card!\n\nYour real-life action: ${actionCardText}`;
+            } else {
+                message = `You chose to give a card!\n\nRead this to a friend: ${actionCardText}`;
+            }
+            closePrompt(() => {
+                showInfoPrompt("💡", "Real-Life Action", message, nextTurn);
+            });
+        }
+        
+        function handleLendAHand() {
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            const otherPlayers = gameState.players.filter((_, index) => index !== gameState.currentPlayerIndex);
+            
+            const canHelp = otherPlayers.some(p => p.emotionalWeights > 0) || currentPlayer.truthBombs > 1;
+
+            if (!canHelp) {
+                showInfoPrompt('🤝', 'Lend a Hand', "You wanted to lend a hand, but no one needs help right now! Your kindness is noted.", nextTurn);
+                return;
+            }
+
+            promptModal.classList.remove('hidden');
+            setTimeout(() => promptModal.querySelector('div').classList.add('scale-100', 'opacity-100'), 10);
+            promptTitle.textContent = "Lend a Hand";
+            promptIcon.textContent = "🤝";
+            promptText.innerHTML = "Choose another player to help on their journey.";
+            
+            let playerButtons = '';
+            otherPlayers.forEach(p => {
+                const playerIndex = gameState.players.indexOf(p);
+                playerButtons += `<button onclick="showLendAHandOptions(${playerIndex})" class="btn text-white px-6 py-2 rounded-full" style="background-color: ${p.color};">${p.name}</button>`;
+            });
+            promptButtons.innerHTML = playerButtons;
+        }
+
+        function showLendAHandOptions(chosenPlayerIndex) {
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            const chosenPlayer = gameState.players[chosenPlayerIndex];
+            
+            promptTitle.textContent = `Helping ${chosenPlayer.name}`;
+            promptText.innerHTML = "How would you like to help?";
+            
+            const canShareWeight = chosenPlayer.emotionalWeights > 0;
+            const canGiftBomb = currentPlayer.truthBombs > 1;
+
+            promptButtons.innerHTML = `
+                <button onclick="executeLendAHand('share', ${chosenPlayerIndex})" class="btn bg-red-500 text-white px-6 py-2 rounded-full" ${!canShareWeight ? 'disabled' : ''}>Share their Weight 🏋️‍♂️</button>
+                <button onclick="executeLendAHand('gift', ${chosenPlayerIndex})" class="btn bg-yellow-500 text-white px-6 py-2 rounded-full" ${!canGiftBomb ? 'disabled' : ''}>Gift a Bomb ⭐</button>
+            `;
+        }
+
+        function executeLendAHand(action, chosenPlayerIndex) {
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            const chosenPlayer = gameState.players[chosenPlayerIndex];
+
+            if (action === 'share') {
+                chosenPlayer.emotionalWeights--;
+                currentPlayer.emotionalWeights++;
+                flashToken(chosenPlayerIndex, 'weights');
+                flashToken(gameState.currentPlayerIndex, 'weights');
+            } else if (action === 'gift') {
+                currentPlayer.truthBombs--;
+                chosenPlayer.truthBombs++;
+                flashToken(gameState.currentPlayerIndex, 'bombs');
+                flashToken(chosenPlayerIndex, 'bombs');
+            }
+            closePrompt(nextTurn);
+        }
+        
+        function showInfoPrompt(icon, title, text, callback) {
+            promptModal.classList.remove('hidden');
+            setTimeout(() => promptModal.querySelector('div').classList.add('scale-100', 'opacity-100'), 10);
+            promptTitle.textContent = title;
+            promptIcon.textContent = icon;
+            promptText.innerHTML = text.replace(/\n/g, '<br>');
+            const continueBtn = document.createElement('button');
+            continueBtn.className = 'btn bg-amber-500 text-white px-8 py-2 rounded-full';
+            continueBtn.textContent = 'Continue';
+            continueBtn.onclick = () => closePrompt(callback);
+            promptButtons.innerHTML = '';
+            promptButtons.appendChild(continueBtn);
+        }
+        
+        function closePrompt(callback) {
+            promptModal.querySelector('div').classList.remove('scale-100', 'opacity-100');
+            setTimeout(() => {
+                promptModal.classList.add('hidden');
+                if (callback) callback();
+            }, 300);
+        }
+
+        function nextTurn() {
+            gameState.currentPlayerIndex = (gameState.currentPlayerIndex + 1) % gameState.players.length;
+            rollResult.textContent = '';
+            rollDieBtn.disabled = false;
+            drawFullScene();
+            updateUI();
+        }
+
+        function seekLiberation() {
+            const player = gameState.players[gameState.currentPlayerIndex];
+            player.position = gameState.boardTiles.length - 1;
+            drawFullScene();
+            
+            const randomMessage = LIBERATION_MESSAGES[Math.floor(Math.random() * LIBERATION_MESSAGES.length)];
+            const winText = `${player.name} has been liberated!\n\nNow, shout it from the rooftops:\n"${randomMessage}"`;
+
+            promptModal.classList.remove('hidden');
+            setTimeout(() => promptModal.querySelector('div').classList.add('scale-100', 'opacity-100'), 10);
+            promptTitle.textContent = "A WINNER IS YOU!";
+            promptIcon.textContent = "🏆";
+            promptText.innerHTML = winText.replace(/\n/g, '<br>');
+            promptButtons.innerHTML = `
+                <button onclick="resetGame()" class="btn bg-green-500 text-white px-6 py-2 rounded-full">Play Again</button>
+                <button onclick="endGame()" class="btn bg-gray-500 text-white px-6 py-2 rounded-full">End Game</button>
+            `;
+        }
+        
+        function resetGame() {
+            gameState.players.forEach(p => {
+                p.position = 0;
+                p.truthBombs = 0;
+                p.emotionalWeights = 1;
+                p.isSlowed = false;
+            });
+            gameState.milestonesClaimed = {};
+            gameState.currentPlayerIndex = 0;
+            for (const deckName in CARD_DECKS) {
+                gameState.shuffledDecks[deckName] = shuffleDeck([...CARD_DECKS[deckName]]);
+            }
+            closePrompt(() => {
+                drawFullScene();
+                updateUI();
+            });
+        }
+        
+        function endGame() {
+            location.reload();
+        }
+        
+        function closeRulesModal() {
+            rulesModal.classList.add('hidden');
+        }
+
+        // --- EVENT LISTENERS ---
+        window.addEventListener('resize', resizeCanvas);
+        rollDieBtn.addEventListener('click', rollDie);
+        liberationBtn.addEventListener('click', seekLiberation);
+        rulesBtn.addEventListener('click', () => rulesModal.classList.remove('hidden'));
+
+    </script>
+</body>
+</html>
